@@ -86,6 +86,50 @@ def get_empty_wardrobe() -> dict:
     return _wardrobe("empty_wardrobe")
 
 
+def load_style_memory() -> dict:
+    """
+    Load remembered style tags from previous runs (stretch — style memory).
+
+    Returns:
+        A dict {"style_tags": list[str]} — tags seen across past finds, most
+        recent last. Empty if no memory file exists yet.
+    """
+    path = os.path.join(_DATA_DIR, "style_memory.json")
+    if not os.path.exists(path):
+        return {"style_tags": []}
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def save_style_memory(memory: dict) -> None:
+    """Persist the style memory dict to disk so it's there on the next run."""
+    path = os.path.join(_DATA_DIR, "style_memory.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(memory, f, indent=2)
+
+
+def remember_style(style_tags: list[str], limit: int = 20) -> dict:
+    """
+    Add newly-seen style tags to memory and persist it.
+
+    Args:
+        style_tags: tags from the item the user just looked at.
+        limit: how many tags to keep, most recent kept when trimming.
+
+    Returns:
+        The updated memory dict.
+    """
+    memory = load_style_memory()
+    seen = memory["style_tags"]
+    for tag in style_tags:
+        if tag in seen:
+            seen.remove(tag)
+        seen.append(tag)
+    memory["style_tags"] = seen[-limit:]
+    save_style_memory(memory)
+    return memory
+
+
 # --- Quick sanity check ---
 if __name__ == "__main__":
     listings = load_listings()
