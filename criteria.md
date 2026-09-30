@@ -44,57 +44,54 @@ Given a query that matches no listings, the agent stops before calling
 
 ## 3. Something about state
 
-<!-- YOU WRITE THIS ONE.
-
-     How would you know that the item your search found is the same item the
-     next tool received? Name something countable or observable.
-
-     This is the criterion people find hardest, because state failure doesn't
-     look like state failure — it looks like a tool problem. Something that
-     compares session["selected_item"] against what actually reached
-     suggest_outfit is the shape you're after. -->
-
-
+`session["selected_item"]["id"]` matches the `id` of the listing dict named in
+`session["outfit_suggestion"]` (i.e. the item `suggest_outfit` was actually
+called with, confirmed via `trace.step`'s `in:` line for that call) — 5 of 5
+tries.
 
 **Why this target:**
-
-
+This is a wiring check, not a model-quality check — either the id that went
+into `suggest_outfit` matches `selected_item` or it doesn't, there's no partial
+credit and no run-to-run variance to account for, so 5 of 5 is the only
+honest target. `agent.py::run_agent` reads `selected_item` out of the session
+and passes that same object into `suggest_outfit`, so a failure here would
+mean the session plumbing itself is broken, not that the model did something
+unexpected.
 
 ---
 
 ## 4. Something about the fit card
 
-<!-- YOU WRITE THIS ONE.
-
-     The fit card calls a model, so the same input can produce different words
-     each time. That's not a bug — it's the nature of the tool. So what would
-     make it acceptable?
-
-     Think about what you'd actually be unhappy to see. A caption that never
-     mentions the price? Two different items producing the same opening
-     sentence? A card longer than a caption anyone would post? Any of those can
-     be turned into a number. -->
-
-
+For 5 different items run through `create_fit_card`, each caption mentions
+the item's price (as `$` followed by the numeral) exactly once and is between
+2 and 4 sentences — 4 of 5 tries.
 
 **Why this target:**
-
-
+4 of 5 and not 5 of 5 because the prompt *asks* the model to mention the price
+once, but doesn't force it structurally — at TEMPERATURE 0.9 the model has
+room to phrase things in a way that drops the numeral (e.g. spelling out
+"eighteen dollars") or run a sentence long enough to blur the count. The
+content is allowed to vary every run — that's the point of temperature — but
+the structural shape (price present, sentence count in range) is what's
+actually checkable and worth holding to a near-perfect target.
 
 ---
 
 ## 5. Your choice
 
-<!-- YOU WRITE THIS ONE TOO.
-
-     Pick something you actually care about getting right. Speed, the empty
-     wardrobe path, what happens when the model can't be reached, whether the
-     search respects a price ceiling — anything, as long as it names a number
-     or an observable outcome. -->
-
-
+Given a query with an explicit `size` token (e.g. "size M"), every listing in
+`search_listings`'s returned list has that size token as one of its
+whitespace/slash/hyphen-separated size tokens (e.g. "M" matches "S/M" but not
+"US 9" or "XL") — 5 of 5 tries, across 5 different size values.
 
 **Why this target:**
+I picked this because the size-matching logic is the one place in
+`search_listings` where a naive implementation (plain substring matching)
+silently produces wrong results without ever raising an error — `"s" in "us 9"`
+is `True` in Python, so an unguarded filter would return shoes when someone
+asked for a small top. Since my implementation tokenizes the size string
+instead of substring-matching, this should be exactly correct every time with
+no model variance involved, so 5 of 5 is the honest target.
 
 
 
