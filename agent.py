@@ -13,10 +13,13 @@ Build and test your three tools in `tools.py` first. Then come here.
     python agent.py          runs both example paths below
 """
 
+import re
+
 import config
 import trace
-from tools import search_listings, suggest_outfit, create_fit_card
+from tools import search_listings, suggest_outfit, create_fit_card, compare_price
 from generate import ModelUnavailable
+from utils.data_loader import remember_style, load_style_memory
 
 
 # ── session state ─────────────────────────────────────────────────────────────
@@ -43,8 +46,39 @@ def new_session(query: str, wardrobe: dict) -> dict:
         "wardrobe": wardrobe,        # the user's wardrobe
         "outfit_suggestion": None,   # what suggest_outfit returned
         "fit_card": None,            # what create_fit_card returned
+        "price_comparison": None,    # what compare_price returned (stretch — 2nd branch)
         "error": None,               # set when the run ended early
     }
+
+
+# ── query parsing ─────────────────────────────────────────────────────────────
+
+def parse_query(query: str) -> dict:
+    """
+    Pull a size and a price ceiling out of free text with regex, and use
+    whatever's left as the search description.
+
+    "vintage graphic tee under $30, size M" ->
+        {"description": "vintage graphic tee", "size": "M", "max_price": 30.0}
+    """
+    remaining = query
+
+    max_price = None
+    price_match = re.search(r"(?:under|below|less than)\s*\$?\s*(\d+(?:\.\d+)?)", remaining, re.I)
+    if price_match:
+        max_price = float(price_match.group(1))
+        remaining = remaining[: price_match.start()] + remaining[price_match.end():]
+
+    size = None
+    size_match = re.search(r"size\s*[:\-]?\s*([A-Za-z0-9/]+)", remaining, re.I)
+    if size_match:
+        size = size_match.group(1)
+        remaining = remaining[: size_match.start()] + remaining[size_match.end():]
+
+    description = re.sub(r"[,]+", " ", remaining)
+    description = re.sub(r"\s+", " ", description).strip()
+
+    return {"description": description, "size": size, "max_price": max_price}
 
 
 # ── planning loop ─────────────────────────────────────────────────────────────
@@ -106,10 +140,104 @@ def run_agent(query: str, wardrobe: dict) -> dict:
         than a stack trace. The import is already at the top of this file.
     """
     session = new_session(query, wardrobe)
+    iteration = 0
 
-    # TODO: delete these two lines and build the loop.
-    session["error"] = "The planning loop isn't built yet — see the TODO in agent.py."
-    return session
+    try:
+        iteration += 1
+        trace.check_iterations(iteration)
+        parsed = parse_query(query)
+        session["parsed"] = parsed
+        trace.step("parse_query", inputs={"query": query}, returned=parsed)
+
+        iteration += 1
+        trace.check_iterations(iteration)
+        results = search_listings(
+            parsed["description"], parsed["size"], parsed["max_price"]
+        )
+        session["search_results"] = results
+        trace.step(
+            "search_listings",
+            inputs=parsed,
+            returned=results,
+            note="" if results else "branch: empty, stopping",
+        )
+
+        # ── THE BRANCH ──
+        if not results:
+            session["error"] = (
+                "No listings matched your search. Try loosening the size, "
+                "raising the price ceiling, or using a broader description."
+            )
+            return session
+
+        selected_item = results[0]
+        session["selected_item"] = selected_item
+
+        # Style memory (stretch): fold remembered style tags from past runs
+        # into the wardrobe as a lightweight synthetic "preferences" item, so
+        # suggest_outfit sees taste built up over previous sessions, not just
+        # what's in the static wardrobe file.
+        remembered_tags = load_style_memory()["style_tags"]
+        wardrobe_with_memory = dict(wardrobe)
+        if remembered_tags:
+            wardrobe_with_memory["items"] = wardrobe.get("items", []) + [{
+                "id": "style_memory",
+                "name": "Remembered style preferences",
+                "category": "accessories",
+                "colors": [],
+                "style_tags": remembered_tags,
+                "notes": "Styles the user has gravitated toward in past finds.",
+            }]
+
+        iteration += 1
+        trace.check_iterations(iteration)
+        outfit = suggest_outfit(selected_item, wardrobe_with_memory)
+        session["outfit_suggestion"] = outfit
+        remember_style(selected_item.get("style_tags", []))
+        trace.step(
+            "suggest_outfit",
+            inputs={"new_item": selected_item.get("title"), "wardrobe_items": len(wardrobe.get("items", []))},
+            returned=outfit,
+        )
+
+        iteration += 1
+        trace.check_iterations(iteration)
+        fit_card = create_fit_card(outfit, selected_item)
+        session["fit_card"] = fit_card
+        trace.step(
+            "create_fit_card",
+            inputs={"outfit": outfit, "new_item": selected_item.get("title")},
+            returned=fit_card,
+        )
+
+        # ── SECOND BRANCH (stretch) ──
+        # If the selected item's price is at or above its category average,
+        # run a price comparison so the fit card isn't the only signal about
+        # whether it's a good find.
+        iteration += 1
+        trace.check_iterations(iteration)
+        comparison = compare_price(selected_item)
+        if comparison["verdict"] != "good deal":
+            session["price_comparison"] = comparison
+            trace.step(
+                "compare_price",
+                inputs={"item": selected_item.get("title")},
+                returned=comparison,
+                note=f"branch: {comparison['verdict']}, flagging price",
+            )
+        else:
+            trace.step(
+                "compare_price",
+                inputs={"item": selected_item.get("title")},
+                returned=comparison,
+                note="branch: good deal, no flag needed",
+            )
+
+        return session
+
+    except ModelUnavailable as exc:
+        session["error"] = f"The model couldn't be reached: {exc}"
+        return session
 
 
 # ── running it directly ───────────────────────────────────────────────────────
