@@ -9,9 +9,7 @@ can't tell which layer is lying to you.
     search_listings(description, size, max_price)  → list[dict]
     suggest_outfit(new_item, wardrobe)             → str
     create_fit_card(outfit, new_item)              → str
-
-All three are stubs right now. They run and they do nothing — that's the
-starting position and it's deliberate.
+    compare_price(item, category)                  → dict   (stretch — 4th tool)
 
 ⚠️ Before you write any of them, fill in the **Tool Inventory** section of your
 README (Milestone 2). Four lines per tool: what it does, each input with its
@@ -20,7 +18,9 @@ That last line is what your loop branches on. "Returns a list" earns nothing —
 the description has to say what is *in* the list.
 """
 
-import config  # noqa: F401 — you'll use this in search_listings
+import re
+
+import config
 from generate import generate
 from utils.data_loader import load_listings
 
@@ -78,8 +78,40 @@ def search_listings(
     Test it from a terminal before you move on:
         python -c "from tools import search_listings; print(search_listings('graphic tee', max_price=30))"
     """
-    # TODO: replace this with your implementation
-    return []
+    listings = load_listings()
+
+    if max_price is not None:
+        listings = [item for item in listings if item["price"] <= max_price]
+
+    if size is not None:
+        size_lower = size.strip().lower()
+        matched = []
+        for item in listings:
+            item_size = item["size"].lower()
+            # Size tokens are compared whole, not with substring matching —
+            # "s" in "us 9" and "l" in "xl" are both true and both wrong.
+            # Split on non-alphanumeric separators ("S/M" -> ["s", "m"]) and
+            # require an exact token match.
+            tokens = re.split(r"[\s/\-]+", item_size)
+            if size_lower in tokens:
+                matched.append(item)
+        listings = matched
+
+    description_words = set(re.findall(r"[a-z0-9]+", description.lower()))
+
+    scored = []
+    for item in listings:
+        haystack = " ".join(
+            [item["title"], item["description"], item["category"]]
+            + item["style_tags"]
+        ).lower()
+        haystack_words = set(re.findall(r"[a-z0-9]+", haystack))
+        score = len(description_words & haystack_words)
+        if score > 0:
+            scored.append((score, item))
+
+    scored.sort(key=lambda pair: pair[0], reverse=True)
+    return [item for _, item in scored[: config.SEARCH_RESULT_LIMIT]]
 
 
 # ── Tool 2: suggest_outfit ────────────────────────────────────────────────────
@@ -112,8 +144,35 @@ def suggest_outfit(new_item: dict, wardrobe: dict) -> str:
     Test it from a terminal before you move on:
         python -c "from tools import suggest_outfit; from utils.data_loader import get_example_wardrobe, load_listings; print(suggest_outfit(load_listings()[0], get_example_wardrobe()))"
     """
-    # TODO: replace this with your implementation
-    return ""
+    item_desc = (
+        f"{new_item['title']} ({new_item['category']}), "
+        f"colors: {', '.join(new_item['colors'])}, "
+        f"style: {', '.join(new_item['style_tags'])}"
+    )
+
+    wardrobe_items = wardrobe.get("items", [])
+
+    if not wardrobe_items:
+        prompt = (
+            f"Someone is considering thrifting this item: {item_desc}.\n"
+            f"They don't have a wardrobe on file yet. Give general styling "
+            f"advice for what kinds of pieces would go well with this item — "
+            f"2-3 sentences, specific about colors and styles, not generic."
+        )
+    else:
+        wardrobe_text = "\n".join(
+            f"- {w['name']} ({w['category']}, {', '.join(w['colors'])})"
+            for w in wardrobe_items
+        )
+        prompt = (
+            f"Someone is considering thrifting this item: {item_desc}.\n"
+            f"Here is their current wardrobe:\n{wardrobe_text}\n\n"
+            f"Suggest one or two specific outfits using pieces they already "
+            f"own alongside the new item. Name the actual pieces from their "
+            f"wardrobe by name. 2-3 sentences."
+        )
+
+    return generate(prompt)
 
 
 # ── Tool 3: create_fit_card ───────────────────────────────────────────────────
@@ -152,5 +211,80 @@ def create_fit_card(outfit: str, new_item: dict) -> str:
     Test it from a terminal before you move on:
         python -c "from tools import create_fit_card; from utils.data_loader import load_listings; print(create_fit_card('jeans and white sneakers', load_listings()[0]))"
     """
-    # TODO: replace this with your implementation
-    return ""
+    if not outfit or not outfit.strip():
+        return (
+            f"No outfit suggestion to caption yet — {new_item.get('title', 'this item')} "
+            f"needs an outfit idea before a fit card can be written."
+        )
+
+    prompt = (
+        f"Write a short social media caption (2-4 sentences) for a thrifted "
+        f"find someone is posting about.\n\n"
+        f"Item: {new_item['title']}\n"
+        f"Price: ${new_item['price']} on {new_item['platform']}\n"
+        f"Outfit idea: {outfit}\n\n"
+        f"Mention the item, the price, and the platform once each. Write it "
+        f"like a real post — specific about the vibe, not like a product "
+        f"listing."
+    )
+
+    return generate(prompt)
+
+
+# ── Tool 4 (stretch): compare_price ───────────────────────────────────────────
+
+def compare_price(item: dict, category: str | None = None) -> dict:
+    """
+    Compare a listing's price against other listings in the same category.
+
+    Doesn't call the model — it's a plain stats lookup over the listings data,
+    same as search_listings.
+
+    Args:
+        item:     the listing dict to evaluate (e.g. session["selected_item"]).
+        category: which category to compare against, or None to use
+                  item["category"].
+
+    Returns:
+        A dict: {"average_price": float, "percent_of_average": float,
+        "verdict": str, "compared_to": int}, where "compared_to" is how many
+        other listings in the category were used and "verdict" is one of
+        "good deal", "fair price", "above average".
+        **Returns {"average_price": None, "percent_of_average": None,
+        "verdict": "no comparison data", "compared_to": 0}** when no other
+        listings exist in that category.
+
+    Test it from a terminal before you move on:
+        python -c "from tools import compare_price; from utils.data_loader import load_listings; print(compare_price(load_listings()[0]))"
+    """
+    category = category or item.get("category")
+    others = [
+        listing
+        for listing in load_listings()
+        if listing["category"] == category and listing["id"] != item.get("id")
+    ]
+
+    if not others:
+        return {
+            "average_price": None,
+            "percent_of_average": None,
+            "verdict": "no comparison data",
+            "compared_to": 0,
+        }
+
+    average_price = sum(listing["price"] for listing in others) / len(others)
+    percent_of_average = (item["price"] / average_price) * 100
+
+    if percent_of_average <= 80:
+        verdict = "good deal"
+    elif percent_of_average <= 115:
+        verdict = "fair price"
+    else:
+        verdict = "above average"
+
+    return {
+        "average_price": round(average_price, 2),
+        "percent_of_average": round(percent_of_average, 1),
+        "verdict": verdict,
+        "compared_to": len(others),
+    }
