@@ -52,11 +52,11 @@ finds so later outfit suggestions build on earlier ones.
 
 ## Stretch Features Implemented
 
-- **A fourth tool — `compare_price`** (`tools.py`). See Tool Inventory below.
-- **A second branch** — the loop takes a different path depending on whether
+- **A fourth tool, `compare_price`** (`tools.py`). See Tool Inventory below.
+- **A second branch**: the loop takes a different path depending on whether
   the found item's price is at/above its category average. See Planning Loop
   below.
-- **Style memory** — the agent remembers style tags across runs. See Sample
+- **Style memory**: the agent remembers style tags across runs. See Sample
   Run below for two runs where the second is shaped by the first.
 
 ---
@@ -76,28 +76,28 @@ finds so later outfit suggestions build on earlier ones.
 ### `search_listings`
 
 - **What it does:** Filters the listings data by price and size, scores what's left by keyword overlap with a description, and returns the best matches.
-- **Inputs:** `description` (str) — keywords describing what the user wants; `size` (str or None) — a size token to match, or None to skip size filtering; `max_price` (float or None) — inclusive price ceiling, or None to skip price filtering.
+- **Inputs:** `description` (str): keywords describing what the user wants; `size` (str or None): a size token to match, or None to skip size filtering; `max_price` (float or None): inclusive price ceiling, or None to skip price filtering.
 - **Returns:** A list of listing dicts (best match first), each with `id, title, description, category, style_tags (list), size, condition, price (float), colors (list), brand (str or None), platform`. Capped at `config.SEARCH_RESULT_LIMIT`.
-- **When it has nothing:** Returns `[]` — an empty list, never `None` and never an exception.
+- **When it has nothing:** Returns `[]`, an empty list, never `None` and never an exception.
 
 ### `suggest_outfit`
 
 - **What it does:** Asks the model for one or two outfit ideas pairing a new item with the user's wardrobe.
-- **Inputs:** `new_item` (dict) — a listing dict; `wardrobe` (dict) — a wardrobe dict with an `items` key (list of wardrobe item dicts), which may be empty.
+- **Inputs:** `new_item` (dict): a listing dict; `wardrobe` (dict): a wardrobe dict with an `items` key (list of wardrobe item dicts), which may be empty.
 - **Returns:** A non-empty `str`, 2-3 sentences, naming specific wardrobe pieces by name when the wardrobe isn't empty.
 - **When it has nothing:** When `wardrobe["items"]` is empty, returns general styling advice (a string) instead of raising or returning `""`.
 
 ### `create_fit_card`
 
 - **What it does:** Writes a short, caption-style post about the item using the outfit suggestion.
-- **Inputs:** `outfit` (str) — the string from `suggest_outfit`; `new_item` (dict) — the listing dict.
+- **Inputs:** `outfit` (str): the string from `suggest_outfit`; `new_item` (dict): the listing dict.
 - **Returns:** A 2-4 sentence `str` caption mentioning the item, its price, and its platform once each.
 - **When it has nothing:** When `outfit` is empty or whitespace-only, returns a descriptive message string (naming the item) instead of raising.
 
-### `compare_price` (stretch — 4th tool)
+### `compare_price` (stretch, 4th tool)
 
 - **What it does:** Compares a listing's price against other listings in the same category and returns a verdict.
-- **Inputs:** `item` (dict) — the listing dict to evaluate; `category` (str or None) — which category to compare against, defaults to `item["category"]`.
+- **Inputs:** `item` (dict): the listing dict to evaluate; `category` (str or None): which category to compare against, defaults to `item["category"]`.
 - **Returns:** A dict `{"average_price": float, "percent_of_average": float, "verdict": str, "compared_to": int}`, where `verdict` is one of `"good deal"`, `"fair price"`, `"above average"`.
 - **When it has nothing:** When no other listings exist in the category, returns `{"average_price": None, "percent_of_average": None, "verdict": "no comparison data", "compared_to": 0}`.
 
@@ -116,15 +116,15 @@ finds so later outfit suggestions build on earlier ones.
      The grader checks your code against what you claim here, so the file and
      function have to be real. -->
 
-**Branch rule (required branch):** If `search_listings` returns an empty list, put a message in `session["error"]` naming what the user could change (loosen size, raise price, broaden description) and stop — do not call `suggest_outfit`. Otherwise, take the first result as `session["selected_item"]` and continue to `suggest_outfit`.
+**Branch rule (required branch):** If `search_listings` returns an empty list, put a message in `session["error"]` naming what the user could change (loosen size, raise price, broaden description) and stop; do not call `suggest_outfit`. Otherwise, take the first result as `session["selected_item"]` and continue to `suggest_outfit`.
 
-**Branch rule (stretch — 2nd branch):** After `create_fit_card`, call `compare_price` on the selected item. If its `verdict` is not `"good deal"` (i.e. it's `"fair price"` or `"above average"`), store the comparison in `session["price_comparison"]` and note it in the trace as a flag; if it *is* a good deal, the comparison still runs (so the trace always shows the check) but nothing is flagged.
+**Branch rule (stretch, 2nd branch):** After `create_fit_card`, call `compare_price` on the selected item. If its `verdict` is not `"good deal"` (i.e. it's `"fair price"` or `"above average"`), store the comparison in `session["price_comparison"]` and note it in the trace as a flag; if it *is* a good deal, the comparison still runs (so the trace always shows the check) but nothing is flagged.
 
 **Where it lives:** `agent.py::run_agent`
 
 **How the query is parsed:** Regex (`agent.py::parse_query`). One regex pulls a price ceiling from phrases like "under $30"/"below 30"/"less than 30"; a second pulls a size from "size M" style phrases; whatever text is left (with the matched spans removed) becomes the search description.
 
-**What moves through the session:** `query` → `parsed` (from `parse_query`) → `search_results` (from `search_listings`) → `selected_item` (first result) → `outfit_suggestion` (from `suggest_outfit`, called with `selected_item` and the wardrobe merged with style memory) → `fit_card` (from `create_fit_card`, called with `outfit_suggestion` and `selected_item`) → `price_comparison` (from `compare_price`, called with `selected_item`). `error` is set instead, and the rest stay `None`, when the branch triggers.
+**What moves through the session:** `query` -> `parsed` (from `parse_query`) -> `search_results` (from `search_listings`) -> `selected_item` (first result) -> `outfit_suggestion` (from `suggest_outfit`, called with `selected_item` and the wardrobe merged with style memory) -> `fit_card` (from `create_fit_card`, called with `outfit_suggestion` and `selected_item`) -> `price_comparison` (from `compare_price`, called with `selected_item`). `error` is set instead, and the rest stay `None`, when the branch triggers.
 
 ---
 
@@ -226,7 +226,7 @@ run, `data/style_memory.json` contains:
 
 Run 2 (`90s track jacket in size M`) then calls `suggest_outfit` with a
 wardrobe that includes a synthetic "Remembered style preferences" item
-carrying those four tags, folded in on top of the static wardrobe — so the
+carrying those four tags, folded in on top of the static wardrobe, so the
 second run's outfit suggestion is shaped by what the first run found, not
 just the fixed wardrobe file. See `agent.py::run_agent` for where this is
 wired (`load_style_memory` / `remember_style` in `utils/data_loader.py`).
@@ -245,14 +245,14 @@ wired (`load_style_memory` / `remember_style` in `utils/data_loader.py`).
 **Moment 1**
 
 - *What I asked for:* I asked Claude to implement `search_listings`'s size filter and flagged the warning already in the docstring about substring matching on size strings (e.g. `"s" in "us 9"`).
-- *What came back:* A first pass that split each listing's size string on any non-alphanumeric character (`re.split(r"[^a-z0-9]+", ...)`) and checked for an exact token match — which fixed the "s" in "us 9" problem, but I then tested it against `"US 8.5"` myself and found that splitting on `.` too turned `"8.5"` into separate tokens `"8"` and `"5"`, so searching for size `"8"` incorrectly matched `"US 8.5"`.
+- *What came back:* A first pass that split each listing's size string on any non-alphanumeric character (`re.split(r"[^a-z0-9]+", ...)`) and checked for an exact token match. That fixed the "s" in "us 9" problem, but I then tested it against `"US 8.5"` myself and found that splitting on `.` too turned `"8.5"` into separate tokens `"8"` and `"5"`, so searching for size `"8"` incorrectly matched `"US 8.5"`.
 - *What I changed:* I changed the split pattern to `r"[\s/\-]+"` (whitespace, slash, hyphen only) so decimal sizes stay intact as one token, and re-verified against the listings data that `"8"` now matches only `"US 8"` and not `"US 8.5"`.
 
 **Moment 2**
 
-- *What I asked for:* I asked Claude to write criterion 5 in `criteria.md` and specifically to make sure it named something checkable rather than a vague goal like "search works correctly."
-- *What came back:* A first draft that just said "size filtering works correctly across different size values," which restates the feature rather than naming a test.
-- *What I changed:* I had it rewrite the criterion to name the exact tokenization rule (whitespace/slash/hyphen-separated tokens) and the concrete counterexample it has to avoid (`"M"` matching `"S/M"` but not `"XL"`), with a 5-of-5 target across 5 different size values — something a reader could actually run and check without asking me what I meant.
+- *What I asked for:* I wrote criterion 5 myself first, "size filtering works correctly across different size values," then asked Claude to read it back and tell me, using only that sentence, exactly how it would test it.
+- *What came back:* It said it couldn't test it from that sentence alone. "Works correctly" doesn't say what correct means, so it would have to ask me what counts as a match.
+- *What I changed:* I rewrote the criterion myself to name the exact tokenization rule (whitespace/slash/hyphen-separated tokens) and the concrete counterexample it has to avoid (`"M"` matching `"S/M"` but not `"XL"`), with a 5-of-5 target across 5 different size values: something a reader could actually run and check without asking me what I meant.
 
 <!-- ═══════════════════════ UNIT 4 — THE TEST ═══════════════════════
 
