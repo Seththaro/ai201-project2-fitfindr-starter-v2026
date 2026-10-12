@@ -258,9 +258,15 @@ wired (`load_style_memory` / `remember_style` in `utils/data_loader.py`).
 
 **Moment 3 (unit 4)**
 
-- *What I asked for:* I had Claude run the whole unit 4 workflow against my repo, then I read what it produced against the brief: the MCP move, the three failures, the scenarios, the five-by-five runs.
-- *What came back:* Two things I had to check rather than accept. First, its empty-wardrobe test did not return advice: the model asked for a wardrobe, because my own style-memory stretch had added an item to the "empty" wardrobe. Second, its first retry scorer reported 5 FAILs on runs that had worked, because the checker read the trace before `run_eval.py` had saved it.
-- *What I changed:* I kept the empty-wardrobe finding as a real bug and fixed it in the agent, and I fixed the scorer's ordering and re-ran. I also kept the case where Claude predicted the retry would not affect criterion 2 and was wrong, and reported the miss instead of changing the query.
+- *What I asked for:* I asked Claude to turn my five criteria into pass/fail checks, using only the wording in `criteria.md`. For criterion 3 (the item in the session matches the item passed on), it pointed out that nothing I stored in the session records what `suggest_outfit` was actually called with, and the trace only printed the item's title.
+- *What came back:* A spy around `suggest_outfit` in `run_eval.py` that records the id it receives, and a check that compares it to `session["selected_item"]["id"]`. It also suggested putting `item_id` in the trace line.
+- *What I changed:* I kept the spy and added `item_id` to the trace. I also decided that an empty search result counts as a FAIL for criterion 5, because Claude's first version let an empty list pass without checking any sizes.
+
+**Moment 4 (unit 4)**
+
+- *What I asked for:* After the first run came back all MET, I asked Claude to probe my search with natural phrasings I had not tried.
+- *What came back:* Three real failures: `oversized` was parsed as a size, `sweatshirts` and `sneaker` missed their singular or plural listings, and `size 30` cannot match waist sizes like `W30`.
+- *What I changed:* I fixed the first two as my two improvements, left the waist-size one in What's Still Broken, and kept the probe as a separate diagnostic row instead of editing my criterion 1 queries.
 
 <!-- ═══════════════════════ UNIT 4 — THE TEST ═══════════════════════
 
