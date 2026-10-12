@@ -71,7 +71,8 @@ def parse_query(query: str) -> dict:
         remaining = remaining[: price_match.start()] + remaining[price_match.end():]
 
     size = None
-    size_match = re.search(r"size\s*[:\-]?\s*([A-Za-z0-9/]+)", remaining, re.I)
+    # Improvement 1: \bsize\b, so "oversized" / "sizeable" are not read as a size.
+    size_match = re.search(r"\bsize\b\s*[:\-]?\s*([A-Za-z0-9/]+)", remaining, re.I)
     if size_match:
         size = size_match.group(1)
         remaining = remaining[: size_match.start()] + remaining[size_match.end():]
