@@ -76,7 +76,7 @@ def check_state(record, n, scenario):
     return True, f"both {item.get('id')}"
 
 
-_PRICE = re.compile(r"\$\s?(\d[\d,]*(?:\.\d+)?)")
+_PRICE = re.compile(r"\$\s?(\d+(?:,\d{3})*(?:\.\d+)?)")
 
 
 def _sentences(text):
@@ -196,6 +196,23 @@ SCENARIOS = [
         "wardrobe": "example",
         "criterion": 5,
         "check": check_sizes,
+    },
+    {
+        # Diagnostic (not one of the five), added AFTER the first run, when
+        # "all five MET" looked too good for a keyword matcher. Five natural
+        # phrasings a user could type that all have a matching listing in the
+        # data. Scored like criterion 1: did all three tools complete?
+        "name": "phrasing variants (diagnostic)",
+        "queries": [
+            "oversized sweatshirt",
+            "sweatshirts",
+            "sneaker size 9",
+            "graphic tees under $30",
+            "denim jackets",
+        ],
+        "wardrobe": "example",
+        "criterion": None,
+        "check": check_full_run,
     },
     {
         # Diagnostic (not one of the five): a user with nothing saved.

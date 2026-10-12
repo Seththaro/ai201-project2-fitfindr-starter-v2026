@@ -175,7 +175,10 @@ def write_report(rows, args):
             if number
             else f"{scenario['name']} _(diagnostic — not one of your five)_"
         )
-        if "check" in scenario:
+        if "check" in scenario and number is None:
+            marks = ["PASS" if t.get("passed") else "FAIL" for t in row["tries"]]
+            lines.append(f"| {label_text} | none | {' | '.join(marks)} | {marks.count('PASS')}/{n} |")
+        elif "check" in scenario:
             marks = ["PASS" if t.get("passed") else "FAIL" for t in row["tries"]]
             target = scenario_module.TARGETS[number]
             score = marks.count("PASS")
