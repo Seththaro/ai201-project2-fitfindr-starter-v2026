@@ -37,8 +37,9 @@ import config
 import scenarios as scenario_module
 
 
-def run_once(scenario, use_trace=True):
+def run_once(scenario, attempt=1, use_trace=True):
     """One scenario, one try. Returns everything worth recording."""
+    import agent
     from agent import run_agent
     from utils.data_loader import get_example_wardrobe, get_empty_wardrobe
     import trace as trace_module
@@ -50,12 +51,30 @@ def run_once(scenario, use_trace=True):
     if use_trace:
         trace_module.start_trace()
 
-    record = {"error": None, "session": None, "trace": "", "crashed": None}
+    query = scenario_module.query_for(scenario, attempt)
+    record = {"error": None, "session": None, "trace": "", "crashed": None,
+              "query": query, "calls": []}
+
+    # Spy on suggest_outfit so criterion 3 can see which item it was really
+    # called with. The session only holds what the loop chose to store.
+    real_suggest = agent.suggest_outfit
+
+    def spy(new_item, wardrobe_arg):
+        record["calls"].append(new_item.get("id"))
+        return real_suggest(new_item, wardrobe_arg)
+
+    agent.suggest_outfit = spy
     try:
-        record["session"] = run_agent(scenario["query"], wardrobe)
+        record["session"] = run_agent(query, wardrobe)
     except Exception as exc:  # noqa: BLE001 — a crash is a result worth logging
         record["crashed"] = f"{type(exc).__name__}: {exc}"
         record["traceback"] = traceback.format_exc()
+    finally:
+        agent.suggest_outfit = real_suggest
+
+    check = scenario.get("check")
+    if check:
+        record["passed"], record["reason"] = check(record, attempt, scenario)
 
     if use_trace:
         record["trace"] = trace_module.get_trace()
@@ -68,6 +87,7 @@ def main():
     parser.add_argument("--tries", "--trials", type=int, default=5, dest="tries",
                         help="tries per scenario (default 5, matching your criteria)")
     parser.add_argument("--label", default="", help="a name for this run, e.g. 'before'")
+    parser.add_argument("--only", default="", help="run only scenarios whose name contains this")
     args = parser.parse_args()
 
     problems = scenario_module.validate()
@@ -90,14 +110,17 @@ def main():
 
     rows = []
     for scenario in scenario_module.SCENARIOS:
+        if args.only and args.only.lower() not in scenario["name"].lower():
+            continue
         print(f"{scenario['name']}  ({scenario['wardrobe']} wardrobe)")
-        print(f"  query: {scenario['query']}")
 
         tries = []
         for attempt in range(1, args.tries + 1):
-            record = run_once(scenario)
+            record = run_once(scenario, attempt)
             tries.append(record)
-
+            print(f"  try {attempt} query: {record['query']}")
+            if "passed" in record:
+                print(f"  try {attempt}: {'PASS' if record['passed'] else 'FAIL'} — {record['reason']}")
             if record["crashed"]:
                 print(f"  try {attempt}: CRASHED — {record['crashed']}")
             else:
@@ -152,14 +175,24 @@ def write_report(rows, args):
             if number
             else f"{scenario['name']} _(diagnostic — not one of your five)_"
         )
-        lines.append(f"| {label_text} |  | {' | '.join([' '] * n)} |  |")
+        if "check" in scenario:
+            marks = ["PASS" if t.get("passed") else "FAIL" for t in row["tries"]]
+            target = scenario_module.TARGETS[number]
+            score = marks.count("PASS")
+            if n == 5:
+                verdict = f"{'MET' if score >= target else 'MISSED'} ({score}/5)"
+            else:
+                verdict = f"{score}/{n}"
+            cells = " | ".join(marks)
+            lines.append(f"| {label_text} | {target} of 5 | {cells} | {verdict} |")
+        else:
+            lines.append(f"| {label_text} |  | {' | '.join([' '] * n)} |  |")
 
     lines += [
         "",
-        "> The Try and Verdict columns are blank on purpose. Whether a try",
-        "> passed depends on the criterion you wrote, so it's yours to decide.",
-        "> Count the passes, then read that count against your target: a row",
-        "> targeting 4 of 5 with three PASS cells is MISSED (3/5).",
+        "> PASS/FAIL come from the `check` functions in `scenarios.py`, which are",
+        "> written from the wording in criteria.md. Verdict = passes read against",
+        "> the target: a row targeting 4 of 5 with three PASS cells is MISSED (3/5).",
         "",
         "---",
         "",
@@ -173,12 +206,13 @@ def write_report(rows, args):
     for row in rows:
         scenario = row["scenario"]
         lines += [f"### {scenario['name']}", "",
-                  f"- Query: `{scenario['query']}`",
                   f"- Wardrobe: {scenario['wardrobe']}", ""]
 
         for i, record in enumerate(row["tries"], 1):
-            lines.append(f"**Try {i}**")
+            lines.append(f"**Try {i}** — query: `{record['query']}`")
             lines.append("")
+            if "passed" in record:
+                lines += [f"- check: **{'PASS' if record['passed'] else 'FAIL'}** — {record['reason']}"]
 
             if record["crashed"]:
                 lines += ["Crashed:", "", "```", record["crashed"], "```", ""]
