@@ -25,6 +25,13 @@ from generate import generate
 from utils.data_loader import load_listings
 
 
+def _singular(word: str) -> str:
+    """Crude plural strip: 'tees' -> 'tee', 'jeans' -> 'jean'. Leaves 'dress', 'us', 'ss' alone."""
+    if len(word) > 3 and word.endswith("s") and not word.endswith("ss"):
+        return word[:-1]
+    return word
+
+
 # ── Tool 1: search_listings ───────────────────────────────────────────────────
 
 def search_listings(
@@ -97,7 +104,9 @@ def search_listings(
                 matched.append(item)
         listings = matched
 
-    description_words = set(re.findall(r"[a-z0-9]+", description.lower()))
+    # Improvement 2: compare words by singular form, so "sweatshirts" finds
+    # "Sweatshirt" and "sneaker" finds "Sneakers".
+    description_words = {_singular(w) for w in re.findall(r"[a-z0-9]+", description.lower())}
 
     scored = []
     for item in listings:
@@ -105,7 +114,7 @@ def search_listings(
             [item["title"], item["description"], item["category"]]
             + item["style_tags"]
         ).lower()
-        haystack_words = set(re.findall(r"[a-z0-9]+", haystack))
+        haystack_words = {_singular(w) for w in re.findall(r"[a-z0-9]+", haystack)}
         score = len(description_words & haystack_words)
         if score > 0:
             scored.append((score, item))
