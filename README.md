@@ -261,6 +261,16 @@ wired (`load_style_memory` / `remember_style` in `utils/data_loader.py`).
 
 ---
 
+## Unit 4 Stretch Features (declared before building)
+
+Declared before any unit 4 code was written:
+
+1. **A second tool moved onto MCP**: `compare_price` (no model call), alongside `search_listings`.
+2. **Retry with looser constraints**: an empty search retries once without the size filter, and the agent says what it dropped.
+3. **A second measured improvement** from the diagnosis, with a third run log in the same table format.
+
+---
+
 ## Run Log — Before
 
 <!-- Five criteria, five tries each, in this exact format.
