@@ -17,8 +17,9 @@ import re
 
 import config
 import trace
-from tools import search_listings, suggest_outfit, create_fit_card, compare_price
+from tools import suggest_outfit, create_fit_card
 from generate import ModelUnavailable
+from mcp_client import call_tool, MCPError
 from utils.data_loader import remember_style, load_style_memory
 
 
@@ -79,6 +80,12 @@ def parse_query(query: str) -> dict:
     description = re.sub(r"\s+", " ", description).strip()
 
     return {"description": description, "size": size, "max_price": max_price}
+
+
+def _fmt(values: dict) -> str:
+    """key=value text for a trace line. trace.py shows only the keys of a dict,
+    and a trace that hides the inputs can't be used to diagnose anything."""
+    return ", ".join(f"{k}={v!r}" for k, v in values.items())
 
 
 # ── planning loop ─────────────────────────────────────────────────────────────
@@ -147,17 +154,20 @@ def run_agent(query: str, wardrobe: dict) -> dict:
         trace.check_iterations(iteration)
         parsed = parse_query(query)
         session["parsed"] = parsed
-        trace.step("parse_query", inputs={"query": query}, returned=parsed)
+        trace.step("parse_query", inputs=repr(query), returned=_fmt(parsed))
 
         iteration += 1
         trace.check_iterations(iteration)
-        results = search_listings(
-            parsed["description"], parsed["size"], parsed["max_price"]
-        )
+        # Unit 4: search_listings now runs on the MCP server (mcp_server.py).
+        results = call_tool("search_listings", {
+            "description": parsed["description"],
+            "size": parsed["size"],
+            "max_price": parsed["max_price"],
+        })
         session["search_results"] = results
         trace.step(
-            "search_listings",
-            inputs=parsed,
+            "search_listings (via MCP)",
+            inputs=_fmt(parsed),
             returned=results,
             note="" if results else "branch: empty, stopping",
         )
@@ -196,7 +206,11 @@ def run_agent(query: str, wardrobe: dict) -> dict:
         remember_style(selected_item.get("style_tags", []))
         trace.step(
             "suggest_outfit",
-            inputs={"new_item": selected_item.get("title"), "wardrobe_items": len(wardrobe.get("items", []))},
+            inputs=_fmt({
+                "new_item": selected_item.get("title"),
+                "item_id": selected_item.get("id"),
+                "wardrobe_items": len(wardrobe.get("items", [])),
+            }),
             returned=outfit,
         )
 
@@ -206,7 +220,7 @@ def run_agent(query: str, wardrobe: dict) -> dict:
         session["fit_card"] = fit_card
         trace.step(
             "create_fit_card",
-            inputs={"outfit": outfit, "new_item": selected_item.get("title")},
+            inputs=_fmt({"outfit": outfit[:60] + "…", "new_item": selected_item.get("title")}),
             returned=fit_card,
         )
 
@@ -216,27 +230,42 @@ def run_agent(query: str, wardrobe: dict) -> dict:
         # whether it's a good find.
         iteration += 1
         trace.check_iterations(iteration)
-        comparison = compare_price(selected_item)
+        comparison = call_tool("compare_price", {"item": selected_item})
         if comparison["verdict"] != "good deal":
             session["price_comparison"] = comparison
             trace.step(
-                "compare_price",
-                inputs={"item": selected_item.get("title")},
-                returned=comparison,
+                "compare_price (via MCP)",
+                inputs=_fmt({"item": selected_item.get("title")}),
+                returned=_fmt(comparison),
                 note=f"branch: {comparison['verdict']}, flagging price",
             )
         else:
             trace.step(
-                "compare_price",
-                inputs={"item": selected_item.get("title")},
-                returned=comparison,
+                "compare_price (via MCP)",
+                inputs=_fmt({"item": selected_item.get("title")}),
+                returned=_fmt(comparison),
                 note="branch: good deal, no flag needed",
             )
 
         return session
 
     except ModelUnavailable as exc:
-        session["error"] = f"The model couldn't be reached: {exc}"
+        session["error"] = (
+            f"The model couldn't be reached, so no outfit or fit card was made. {exc}\n"
+            f"What to try: check GEMINI_API_KEY in your .env file (a changed or "
+            f"missing character is the usual cause), confirm you're online, then "
+            f"run the same query again."
+        )
+        trace.step("model unavailable", returned=str(exc), note="stopping, no outfit or fit card")
+        return session
+    except MCPError as exc:
+        session["error"] = (
+            f"The search tool couldn't be reached over MCP, so nothing was searched. "
+            f"{exc}\n"
+            f"What to try: run `python mcp_server.py` on its own to see "
+            f"why it won't start, then run the query again."
+        )
+        trace.step("MCP error", returned=str(exc).splitlines()[0], note="stopping")
         return session
 
 
