@@ -258,15 +258,15 @@ wired (`load_style_memory` / `remember_style` in `utils/data_loader.py`).
 
 **Moment 3 (unit 4)**
 
-- *What I asked for:* I asked Claude to turn my five criteria into pass/fail checks, using only the wording in `criteria.md`. For criterion 3 (the item in the session matches the item passed on), it pointed out that nothing I stored in the session records what `suggest_outfit` was actually called with, and the trace only printed the item's title.
-- *What came back:* A spy around `suggest_outfit` in `run_eval.py` that records the id it receives, and a check that compares it to `session["selected_item"]["id"]`. It also suggested putting `item_id` in the trace line.
-- *What I changed:* I kept the spy and added `item_id` to the trace. I also decided that an empty search result counts as a FAIL for criterion 5, because Claude's first version let an empty list pass without checking any sizes.
+- *What I asked for:* A second opinion on my verdicts, not the verdicts themselves. After the first run came back all MET, I asked Claude whether that result was believable for a keyword matcher, and to suggest natural phrasings my five criterion 1 queries had not covered.
+- *What came back:* Three phrasings that fail: `oversized sweatshirt` (read as a size), `sweatshirts` and `sneaker size 9` (singular and plural do not match), plus `size 30`, which cannot match waist sizes like `W30`.
+- *What I changed:* I did not edit my criterion 1 queries to include them. I ran the new phrasings as a separate diagnostic row so the original table stayed as written, then picked the first two causes as my two improvements and left the waist-size one under What's Still Broken.
 
 **Moment 4 (unit 4)**
 
-- *What I asked for:* After the first run came back all MET, I asked Claude to probe my search with natural phrasings I had not tried.
-- *What came back:* Three real failures: `oversized` was parsed as a size, `sweatshirts` and `sneaker` missed their singular or plural listings, and `size 30` cannot match waist sizes like `W30`.
-- *What I changed:* I fixed the first two as my two improvements, left the waist-size one in What's Still Broken, and kept the probe as a separate diagnostic row instead of editing my criterion 1 queries.
+- *What I asked for:* A check on my own scoring code. I wrote the pass/fail check for criterion 3 myself from the wording in `criteria.md`, and asked Claude to try to break it.
+- *What came back:* It found that the session never records what `suggest_outfit` was called with, so my check would pass whenever the session was internally consistent, whether or not the right item went in. Its first fix also let an empty search result count as a pass for criterion 5, because there were no sizes to compare.
+- *What I changed:* I measured criterion 3 with a spy on the call itself, added `item_id` to the trace line, and made an empty result a FAIL for criterion 5.
 
 <!-- ═══════════════════════ UNIT 4 — THE TEST ═══════════════════════
 
