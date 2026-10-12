@@ -189,7 +189,10 @@ def run_agent(query: str, wardrobe: dict) -> dict:
         # what's in the static wardrobe file.
         remembered_tags = load_style_memory()["style_tags"]
         wardrobe_with_memory = dict(wardrobe)
-        if remembered_tags:
+        # Unit 4 handler: only fold memory into a wardrobe that has items. Adding
+        # the synthetic item to an EMPTY wardrobe made suggest_outfit skip its
+        # general-advice branch, and the model replied "you forgot your wardrobe".
+        if remembered_tags and wardrobe.get("items"):
             wardrobe_with_memory["items"] = wardrobe.get("items", []) + [{
                 "id": "style_memory",
                 "name": "Remembered style preferences",
@@ -250,11 +253,11 @@ def run_agent(query: str, wardrobe: dict) -> dict:
         return session
 
     except ModelUnavailable as exc:
+        found = (session["selected_item"] or {}).get("title")
         session["error"] = (
-            f"The model couldn't be reached, so no outfit or fit card was made. {exc}\n"
-            f"What to try: check GEMINI_API_KEY in your .env file (a changed or "
-            f"missing character is the usual cause), confirm you're online, then "
-            f"run the same query again."
+            (f"The search worked (best match: {found}) but " if found else "")
+            + f"the model couldn't be reached, so no outfit or fit card was made. "
+            f"{exc} Fix that, then run the same query again."
         )
         trace.step("model unavailable", returned=str(exc), note="stopping, no outfit or fit card")
         return session
