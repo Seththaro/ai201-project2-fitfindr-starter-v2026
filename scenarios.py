@@ -122,6 +122,19 @@ def check_sizes(record, n, scenario):
     return True, f"size {wanted.upper()}: all {len(results)} results match"
 
 
+def check_retry(record, n, scenario):
+    """Stretch: retry fired, the dropped constraint is named, and the run completed."""
+    ok, why = check_full_run(record, n, scenario)
+    if not ok:
+        return False, why
+    dropped = _session(record).get("dropped")
+    if not dropped:
+        return False, "completed, but nothing was reported as dropped"
+    if "retry" not in record.get("trace", ""):
+        return False, "no retry step in the trace"
+    return True, f"retried, dropped: {dropped[:40]}"
+
+
 # ── the scenarios ─────────────────────────────────────────────────────────────
 
 SCENARIOS = [
@@ -213,6 +226,21 @@ SCENARIOS = [
         "wardrobe": "example",
         "criterion": None,
         "check": check_full_run,
+    },
+    {
+        # Stretch diagnostic: an empty size-filtered search should retry once
+        # without the size, say what it dropped, and then complete.
+        "name": "retry without size (stretch)",
+        "queries": [
+            "band tee size XXL",
+            "denim jacket size XXL",
+            "flannel size XS",
+            "cargo pants size XL",
+            "bucket hat size L",
+        ],
+        "wardrobe": "example",
+        "criterion": None,
+        "check": check_retry,
     },
     {
         # Diagnostic (not one of the five): a user with nothing saved.

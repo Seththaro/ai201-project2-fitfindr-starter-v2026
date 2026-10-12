@@ -48,6 +48,7 @@ def new_session(query: str, wardrobe: dict) -> dict:
         "outfit_suggestion": None,   # what suggest_outfit returned
         "fit_card": None,            # what create_fit_card returned
         "price_comparison": None,    # what compare_price returned (stretch — 2nd branch)
+        "dropped": None,             # constraint dropped by the retry, if it ran
         "error": None,               # set when the run ended early
     }
 
@@ -170,8 +171,35 @@ def run_agent(query: str, wardrobe: dict) -> dict:
             "search_listings (via MCP)",
             inputs=_fmt(parsed),
             returned=results,
-            note="" if results else "branch: empty, stopping",
+            note=("" if results else
+                  "branch: empty, retrying without the size filter" if parsed["size"] is not None
+                  else "branch: empty, stopping"),
         )
+
+        # ── RETRY WITH LOOSER CONSTRAINTS (unit 4 stretch) ──
+        # An empty search that had a size filter gets one more try without it.
+        # What was dropped goes in session["dropped"] and is shown to the user.
+        if not results and parsed["size"] is not None:
+            iteration += 1
+            trace.check_iterations(iteration)
+            results = call_tool("search_listings", {
+                "description": parsed["description"],
+                "size": None,
+                "max_price": parsed["max_price"],
+            })
+            trace.step(
+                "search_listings (via MCP), retry",
+                inputs=_fmt({**parsed, "size": None}),
+                returned=results,
+                note=(f"retry: dropped the size filter ({parsed['size']})" if results
+                      else "retry: still empty without the size filter"),
+            )
+            if results:
+                session["search_results"] = results
+                session["dropped"] = (
+                    f"size filter (nothing was listed in size {parsed['size']}, so these "
+                    f"may be other sizes)"
+                )
 
         # ── THE BRANCH ──
         if not results:
@@ -282,6 +310,8 @@ def _show(session: dict) -> None:
         return
 
     item = session["selected_item"] or {}
+    if session.get("dropped"):
+        print(f"  dropped:  {session['dropped']}")
     print(f"  found:    {item.get('title')} — ${item.get('price')} on {item.get('platform')}")
     print(f"  outfit:   {session['outfit_suggestion']}")
     print(f"  fit card: {session['fit_card']}")

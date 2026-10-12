@@ -72,12 +72,12 @@ def run_once(scenario, attempt=1, use_trace=True):
     finally:
         agent.suggest_outfit = real_suggest
 
+    if use_trace:
+        record["trace"] = trace_module.get_trace()
+
     check = scenario.get("check")
     if check:
         record["passed"], record["reason"] = check(record, attempt, scenario)
-
-    if use_trace:
-        record["trace"] = trace_module.get_trace()
 
     return record
 
